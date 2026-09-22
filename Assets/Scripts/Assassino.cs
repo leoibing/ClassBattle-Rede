@@ -19,6 +19,12 @@ public class Assassino : Personagem
 				direcaoX = 1f;
 		}
 
+		// Se não estiver apertando nada, dá o dash para o lado que a arma está apontando
+		if (direcaoX == 0f)
+		{
+			direcaoX = arma.ObterDirecao().x >= 0 ? 1f : -1f;
+		}
+
 		// Garante que o dash seja puramente horizontal
 		Vector2 direcaoDash = new(direcaoX, 0f);
 
