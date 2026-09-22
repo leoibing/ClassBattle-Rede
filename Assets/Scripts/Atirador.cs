@@ -14,10 +14,16 @@ public class Atirador : Personagem
 		// Usa exatamente a direção do PontoDeDisparo
 		Vector2 direcao = arma.ObterDirecao();
 
+		if (direcao.sqrMagnitude <= 0.01f)
+		{
+			Debug.LogWarning("Atirador: direção inválida.");
+			return;
+		}
+
 		direcao = direcao.normalized;
 
 		// Posição do PontoDeDisparo
-		Vector2 posicao = arma.pontoDeDisparo.position;
+		Vector2 posicao = arma.ObterPosicaoDeDisparo();
 
 		Projetil novoProjetil = Instantiate(arma.projetilPrefab, posicao, Quaternion.identity);
 

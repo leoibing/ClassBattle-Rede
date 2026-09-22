@@ -51,7 +51,7 @@ public class Arma : MonoBehaviour
 	{
 		Vector2 direcao = ObterDirecao();
 
-		if (direcao.sqrMagnitude <= 0.001f)
+		if (direcao.sqrMagnitude <= 0.01f)
 		{
 			Debug.LogWarning("direção inválida.");
 			return;
@@ -85,7 +85,7 @@ public class Arma : MonoBehaviour
 		Vector2 origem = transform.root.position;
 		Vector2 direcao = mouseMundo - origem;
 
-		if (direcao.sqrMagnitude <= 0.001f) return Vector2.right;
+		if (direcao.sqrMagnitude <= 0.01f) return Vector2.right;
 
 		return direcao.normalized;
 	}

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class Assassino : Personagem
 {
@@ -7,21 +8,23 @@ public class Assassino : Personagem
 
 	public override void UsarHabilidade()
 	{
-		// Usa exatamente a direção do PontoDeDisparo
-		Vector2 direcao = arma.ObterDirecao();
+		float direcaoX = 0f;
 
-		if (direcao.sqrMagnitude <= 0.01f)
+		// Verifica se o jogador está apertando as setas/teclas de movimento
+		if (Keyboard.current != null)
 		{
-			Debug.LogWarning("direção inválida.");
-			return;
+			if (Keyboard.current.aKey.isPressed || Keyboard.current.leftArrowKey.isPressed)
+				direcaoX = -1f;
+			else if (Keyboard.current.dKey.isPressed || Keyboard.current.rightArrowKey.isPressed)
+				direcaoX = 1f;
 		}
 
-		direcao = direcao.normalized;
+		// Garante que o dash seja puramente horizontal
+		Vector2 direcaoDash = new(direcaoX, 0f);
 
-		// Faz o Dash na direção em que a arma está apontando
-		Vector2 novaPosicao = rb.position + direcao * distanciaDash;
+		Vector2 novaPosicao = rb.position + direcaoDash * distanciaDash;
 		rb.MovePosition(novaPosicao);
 
-		Debug.Log("Assassino realizou Dash na direção: " + direcao);
+		Debug.Log("Assassino realizou Dash na direção: " + direcaoDash);
 	}
 }
