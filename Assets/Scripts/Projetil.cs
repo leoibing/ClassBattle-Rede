@@ -1,11 +1,12 @@
 using UnityEngine;
+using Unity.Netcode;
 
-public class Projetil : MonoBehaviour
+public class Projetil : NetworkBehaviour
 {
 	[Header("Configurações")]
 	public int dano = 20;
 	public float velocidade = 12f;
-	public float tempoDeVida = 10f;
+	public float tempoDeVida = 100f;
 
 	private Vector2 direcao;
 	private GameObject dono;
@@ -22,7 +23,10 @@ public class Projetil : MonoBehaviour
 
 	private void Start()
 	{
-		Destroy(gameObject, tempoDeVida);
+		if (IsServer)
+		{
+			Invoke(nameof(DespawnarProjetil), tempoDeVida);
+		}
 	}
 
 	public void MarcarComoEspecial()
@@ -32,6 +36,8 @@ public class Projetil : MonoBehaviour
 
 	private void Update()
 	{
+		if (!IsServer) return;
+
 		MoverProjetil();
 	}
 
@@ -47,24 +53,38 @@ public class Projetil : MonoBehaviour
 		{
 			if (impacto.collider == null) continue;
 
-			// Ignora o próprio jogador
-			if (dono != null && impacto.collider.transform.root.gameObject == dono)
+			// Ignora disparo em aliados do mesmo time (Se for modo 2v2)
+			Personagem pAtingido = impacto.collider.GetComponentInParent<Personagem>();
+			Personagem pDono = dono != null ? dono.GetComponent<Personagem>() : null;
+			if (pAtingido != null && pDono != null && pAtingido == pDono)
 			{
 				continue;
+			}
+
+			bool ehModo2v2 = LobbyManager.Instancia != null && LobbyManager.Instancia.ObterModoSelecionado() == LobbyManager.ModoDeJogo.Modo2v2;
+			if (ehModo2v2 && pAtingido != null && pDono != null && pAtingido.timeId.Value == pDono.timeId.Value)
+			{
+				continue;
+			}
+
+			if (pAtingido != null)
+			{
+				pAtingido.ReceberDano(dano);
+				DespawnarProjetil();
+				return;
 			}
 
 			//CHÃO
 			if (impacto.collider.CompareTag("Chao"))
 			{
 				Debug.Log("Projétil atingiu o CHÃO.");
-				Destroy(gameObject);
+				DespawnarProjetil();
 				return;
 			}
 
-			//POÇÃO
+			//POÇÃO, A bala NÃO é destruída pela poção
 			if (impacto.collider.GetComponentInParent<PocaoCura>() != null)
 			{
-				// A bala NÃO é destruída pela poção
 				continue;
 			}
 
@@ -74,10 +94,8 @@ public class Projetil : MonoBehaviour
 			if (personagem != null)
 			{
 				personagem.ReceberDano(dano);
-
 				Debug.Log("Projétil " + (ehEspecial ? "especial " : "") + "atingiu " + personagem.nome);
-
-				Destroy(gameObject);
+				DespawnarProjetil();
 
 				return;
 			}
@@ -85,6 +103,22 @@ public class Projetil : MonoBehaviour
 			// Se não acertou nada, continua andando
 			transform.position += (Vector3)(direcao * distancia);
 
+		}
+	}
+
+	[ClientRpc]
+	public void AplicarEspecialClientRpc(float escala)
+	{
+		transform.localScale *= escala;
+		if (TryGetComponent<SpriteRenderer>(out var sprite)) sprite.color = Color.red;
+		MarcarComoEspecial();
+	}
+
+	private void DespawnarProjetil()
+	{
+		if (IsServer && NetworkObject != null && NetworkObject.IsSpawned)
+		{
+			NetworkObject.Despawn();
 		}
 	}
 }

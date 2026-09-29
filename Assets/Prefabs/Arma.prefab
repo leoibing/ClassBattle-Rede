@@ -105,6 +105,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 38512139a2418674aa0138f2ad98b655, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Arma
+  ShowTopMostFoldoutHeaderGroup: 1
   projetilPrefab: {fileID: 6252271427527480069, guid: 2ff7c2ae6cccc244391c8ec6d68e2fc3, type: 3}
   pontoDeDisparo: {fileID: 9035008588337337588}
   dano: 20

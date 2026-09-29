@@ -70,7 +70,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 3542766666794412344, guid: 688bccb4e7b264144acab1f20951f40f, type: 3}
+      insertIndex: 0
+      addedObject: {fileID: 6701297468018145174}
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 6095402077868731012, guid: 688bccb4e7b264144acab1f20951f40f, type: 3}
       insertIndex: -1
@@ -93,14 +96,24 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c3310f362bb51cd4e80f89bfa1fea9fd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Tanque
+  ShowTopMostFoldoutHeaderGroup: 1
   nome: Tanque
   vidaMaxima: 100
-  vidaAtual: 100
+  vidaAtual:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 100
+  timeId:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 0
   velocidade: 5
   forcaPulo: 7
   arma: {fileID: 3902868940248370475}
   tempoCooldownEspecial: 5
-  prefabEscudo: {fileID: 4660334921073094142, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+  objetoEscudoVisual: {fileID: 454023269703490331}
   duracaoEscudo: 3
 --- !u!114 &3902868940248370475 stripped
 MonoBehaviour:
@@ -113,3 +126,79 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 38512139a2418674aa0138f2ad98b655, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Arma
+--- !u!4 &8324077065059961153 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3542766666794412344, guid: 688bccb4e7b264144acab1f20951f40f, type: 3}
+  m_PrefabInstance: {fileID: 4805165429116903545}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &5107598925315503845
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 8324077065059961153}
+    m_Modifications:
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660334921073094142, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_Name
+      value: Escudo
+      objectReference: {fileID: 0}
+    - target: {fileID: 4660334921073094142, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+--- !u!1 &454023269703490331 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4660334921073094142, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+  m_PrefabInstance: {fileID: 5107598925315503845}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &6701297468018145174 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1881973182939447667, guid: ace7d2dc8e0c6da44846d3b6da5ad7df, type: 3}
+  m_PrefabInstance: {fileID: 5107598925315503845}
+  m_PrefabAsset: {fileID: 0}

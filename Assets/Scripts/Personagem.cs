@@ -1,12 +1,14 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Unity.Netcode;
 
-public abstract class Personagem : MonoBehaviour
+public abstract class Personagem : NetworkBehaviour
 {
 	[Header("Informações")]
 	public string nome = "Personagem";
 	public int vidaMaxima = 100;
-	public int vidaAtual = 100;
+	public NetworkVariable<int> vidaAtual = new(100);
+	public NetworkVariable<int> timeId = new(0);
 
 	[Header("Movimentação")]
 	public float velocidade = 5f;
@@ -19,15 +21,38 @@ public abstract class Personagem : MonoBehaviour
 	public float tempoCooldownEspecial = 5f;
 
 	protected Rigidbody2D rb;
-
 	protected bool estaNoChao = false;
 	protected float cooldownAtual = 0f;
 
+	public override void OnNetworkSpawn()
+	{
+		Rigidbody2D rig = GetComponent<Rigidbody2D>();
+
+		if (IsServer)
+		{
+			vidaAtual.Value = vidaMaxima;
+		}
+		else
+		{
+			// CRUCIAL: Se não for o Host, desativa a física local para não brigar com o servidor
+			if (rig != null) rig.bodyType = RigidbodyType2D.Kinematic;
+		}
+
+		// Faz a câmera focar no jogador local assim que ele nascer na rede
+		if (IsOwner)
+		{
+			Camera cam = Camera.main;
+			if (cam != null)
+			{
+				if (!cam.TryGetComponent<CameraSeguir>(out var segui)) segui = cam.gameObject.AddComponent<CameraSeguir>();
+				segui.alvo = transform;
+			}
+		}
+	}
+
 	protected virtual void Start()
 	{
-		rb = GetComponent<Rigidbody2D>();
-
-		if (rb == null)
+		if (!TryGetComponent<Rigidbody2D>(out rb))
 		{
 			Debug.LogError("O personagem precisa de um Rigidbody2D!");
 		}
@@ -37,22 +62,22 @@ public abstract class Personagem : MonoBehaviour
 			Debug.LogWarning(nome + " não possui uma arma configurada.");
 			return;
 		}
-
-		vidaAtual = vidaMaxima;
 	}
 
 	protected virtual void Update()
 	{
-		if (rb == null)
-			return;
-
 		AtualizarCooldown();
+
+		if (!IsOwner) return;
+
+		if (rb == null) return;
+
 		Movimentacao();
 
 		// ESPAÇO = PULAR
 		if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
 		{
-			Pular();
+			TentarPularServerRpc();
 		}
 
 		// S = ESPECIAL
@@ -66,8 +91,7 @@ public abstract class Personagem : MonoBehaviour
 	{
 		float horizontal = 0f;
 
-		if (Keyboard.current == null)
-			return;
+		if (Keyboard.current == null) return;
 
 		// A ou seta esquerda
 		if (Keyboard.current.aKey.isPressed || Keyboard.current.leftArrowKey.isPressed)
@@ -81,20 +105,31 @@ public abstract class Personagem : MonoBehaviour
 			horizontal = 1f;
 		}
 
+		AtualizarVelocidadeServerRpc(horizontal);
+	}
+
+	[ServerRpc]
+	private void AtualizarVelocidadeServerRpc(float horizontal)
+	{
 		rb.linearVelocity = new Vector2(horizontal * velocidade, rb.linearVelocity.y);
 	}
 
-	protected virtual void Pular()
+	[ServerRpc]
+	private void TentarPularServerRpc()
 	{
 		if (!estaNoChao)
 		{
 			Debug.Log("Não está no chão.");
 			return;
 		}
-
 		rb.linearVelocity = new Vector2(rb.linearVelocity.x, forcaPulo);
-
 		estaNoChao = false;
+	}
+
+	[ServerRpc]
+	public void DefinirTimeServerRpc(int time)
+	{
+		timeId.Value = time;
 	}
 
 	protected virtual void AtualizarCooldown()
@@ -116,51 +151,49 @@ public abstract class Personagem : MonoBehaviour
 			return;
 		}
 
-		Debug.Log("Usando habilidade especial!");
-
 		UsarHabilidade();
 
+		Debug.Log("Usando habilidade especial!");
 		cooldownAtual = tempoCooldownEspecial;
-	}
-
-	public float ObterCooldownAtual()
-	{
-		return cooldownAtual;
 	}
 
 	public virtual void ReceberDano(int dano)
 	{
-		vidaAtual -= dano;
+		if (!IsServer) return;
 
-		if (vidaAtual < 0)
-			vidaAtual = 0;
+		vidaAtual.Value -= dano;
 
-		Debug.Log(nome +" recebeu " + dano + " de dano. Vida: " + vidaAtual);
-
-		if (vidaAtual <= 0)
+		if (vidaAtual.Value <= 0)
 		{
+			vidaAtual.Value = 0;
 			Morrer();
 		}
+
+		Debug.Log(nome +" recebeu " + dano + " de dano. Vida: " + vidaAtual.Value);
 	}
 
 	public virtual void Curar(int quantidade)
 	{
-		vidaAtual += quantidade;
+		if (!IsServer) return;
 
-		if (vidaAtual > vidaMaxima)
-			vidaAtual = vidaMaxima;
+		vidaAtual.Value += quantidade;
 
-		Debug.Log(nome + " recuperou " + quantidade + " de vida. Vida: " + vidaAtual);
+		if (vidaAtual.Value > vidaMaxima)
+			vidaAtual.Value = vidaMaxima;
+
+		Debug.Log(nome + " recuperou " + quantidade + " de vida. Vida: " + vidaAtual.Value);
 	}
 
 	protected virtual void Morrer()
 	{
-		Debug.Log(nome + " morreu.");
-
-		gameObject.SetActive(false);
+		if (IsServer && NetworkObject != null && NetworkObject.IsSpawned)
+		{
+			NetworkObject.Despawn();
+			Debug.Log(nome + " morreu.");
+		}
 	}
 
-	protected virtual void OnCollisionEnter2D(Collision2D colisao)
+	protected virtual void OnTriggerEnter2D(Collider2D colisao)
 	{
 		if (colisao.gameObject.CompareTag("Chao"))
 		{
@@ -168,7 +201,7 @@ public abstract class Personagem : MonoBehaviour
 		}
 	}
 
-	protected virtual void OnCollisionExit2D(Collision2D colisao)
+	protected virtual void OnTriggerExit2D(Collider2D colisao)
 	{
 		if (colisao.gameObject.CompareTag("Chao"))
 		{

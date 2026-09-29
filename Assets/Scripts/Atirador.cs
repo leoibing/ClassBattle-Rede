@@ -1,4 +1,5 @@
 using UnityEngine;
+using Unity.Netcode;
 
 public class Atirador : Personagem
 {
@@ -11,37 +12,20 @@ public class Atirador : Personagem
 
 	public override void UsarHabilidade()
 	{
-		// Usa exatamente a direção do PontoDeDisparo
-		Vector2 direcao = arma.ObterDirecao();
+		AtirarEspecialServerRpc(arma.ObterDirecao(), arma.ObterPosicaoDeDisparo());
+	}
 
-		if (direcao.sqrMagnitude <= 0.01f)
-		{
-			Debug.LogWarning("Atirador: direção inválida.");
-			return;
-		}
-
-		direcao = direcao.normalized;
-
-		// Posição do PontoDeDisparo
-		Vector2 posicao = arma.ObterPosicaoDeDisparo();
-
+	[ServerRpc]
+	private void AtirarEspecialServerRpc(Vector2 direcao, Vector2 posicao)
+	{
 		Projetil novoProjetil = Instantiate(arma.projetilPrefab, posicao, Quaternion.identity);
-
 		novoProjetil.Configurar(direcao, danoEspecial, velocidadeProjetilEspecial, gameObject);
 
-		// Torna o especial maior
-		novoProjetil.transform.localScale = novoProjetil.transform.localScale * tamanhoEspecial;
+		NetworkObject netObj = novoProjetil.GetComponent<NetworkObject>();
+		netObj.Spawn();
 
-		// Torna o especial vermelho
-		SpriteRenderer sprite = novoProjetil.GetComponent<SpriteRenderer>();
-
-		if (sprite != null)
-		{
-			sprite.color = Color.red;
-		}
-
-		// Informa que esse projétil é um especial
-		novoProjetil.MarcarComoEspecial();
+		// Avisa os clientes para mudarem o visual da bala especial
+		novoProjetil.AplicarEspecialClientRpc(tamanhoEspecial);
 
 		Debug.Log("Atirador utilizou o tiro especial!");
 	}

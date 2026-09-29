@@ -1,41 +1,52 @@
 using UnityEngine;
+using Unity.Netcode;
 
 public class Tanque : Personagem
 {
 	[Header("Escudo")]
-	public GameObject prefabEscudo;
-
+	public GameObject objetoEscudoVisual;
 	public float duracaoEscudo = 3f;
+	private readonly NetworkVariable<bool> escudoAtivo = new(false);
 
-	private GameObject escudoAtual;
+	public override void OnNetworkSpawn()
+	{
+		base.OnNetworkSpawn();
+		escudoAtivo.OnValueChanged += AoMudarEscudo;
+		AtualizarVisualEscudo(escudoAtivo.Value);
+	}
+
+	private void AoMudarEscudo(bool valorAntigo, bool valorNovo)
+	{
+		AtualizarVisualEscudo(valorNovo);
+	}
+	private void AtualizarVisualEscudo(bool ativo)
+	{
+		if (objetoEscudoVisual != null)
+		{
+			objetoEscudoVisual.SetActive(ativo);
+		}
+	}
 
 	public override void UsarHabilidade()
 	{
-		if (escudoAtual != null)
-			return;
+		AtivarEscudoServerRpc();
+	}
 
-		if (prefabEscudo == null)
-		{
-			Debug.LogWarning(
-				"Prefab do escudo não foi configurado."
-			);
-
-			return;
-		}
-
-		escudoAtual = Instantiate(prefabEscudo, transform.position, Quaternion.identity, transform );
+	[ServerRpc]
+	private void AtivarEscudoServerRpc()
+	{
+		if (escudoAtivo.Value) return;
 
 		Debug.Log("Tanque ativou o escudo!");
-
+		escudoAtivo.Value = true;
 		Invoke(nameof(DesativarEscudo), duracaoEscudo);
 	}
 
 	private void DesativarEscudo()
 	{
-		if (escudoAtual != null)
+		if (IsServer)
 		{
-			Destroy(escudoAtual);
-			escudoAtual = null;
+			escudoAtivo.Value = false;
 		}
 
 		Debug.Log("Escudo do Tanque terminou.");
@@ -43,13 +54,9 @@ public class Tanque : Personagem
 
 	public override void ReceberDano(int dano)
 	{
-		if (escudoAtual != null)
-		{
-			Debug.Log("O escudo bloqueou o dano!");
+		if (escudoAtivo.Value) return;
 
-			return;
-		}
-
+		Debug.Log("O escudo bloqueou o dano!");
 		base.ReceberDano(dano);
 	}
 }

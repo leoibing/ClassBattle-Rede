@@ -1,4 +1,5 @@
 using UnityEngine;
+using Unity.Netcode;
 using UnityEngine.InputSystem;
 
 public class Assassino : Personagem
@@ -25,6 +26,12 @@ public class Assassino : Personagem
 			direcaoX = arma.ObterDirecao().x >= 0 ? 1f : -1f;
 		}
 
+		ExecutarDashServerRpc(direcaoX);
+	}
+
+	[ServerRpc]
+	private void ExecutarDashServerRpc(float direcaoX)
+	{
 		// Garante que o dash seja puramente horizontal
 		Vector2 direcaoDash = new(direcaoX, 0f);
 

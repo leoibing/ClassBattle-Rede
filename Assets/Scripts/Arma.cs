@@ -1,8 +1,8 @@
-using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Unity.Netcode;
 
-public class Arma : MonoBehaviour
+public class Arma : NetworkBehaviour
 {
 	[Header("Projétil")]
 	public Projetil projetilPrefab;
@@ -19,6 +19,9 @@ public class Arma : MonoBehaviour
 	private float proximoTiro = 0f;
 
 	private Camera cameraPrincipal;
+
+	// Guarda o último ângulo para evitar flood na rede e o flicker visual
+	private float ultimoAnguloEnviado = -999f;
 
 	private void Start()
 	{
@@ -42,6 +45,8 @@ public class Arma : MonoBehaviour
 
 	private void Update()
 	{
+		if (!IsOwner) return;
+
 		ApontarParaMouse();
 
 		Atirar();
@@ -50,34 +55,46 @@ public class Arma : MonoBehaviour
 	private void ApontarParaMouse()
 	{
 		Vector2 direcao = ObterDirecao();
-
-		if (direcao.sqrMagnitude <= 0.01f)
-		{
-			Debug.LogWarning("direção inválida.");
-			return;
-		}
-
 		float angulo = Mathf.Atan2(direcao.y, direcao.x) * Mathf.Rad2Deg;
 
 		transform.rotation = Quaternion.Euler(0f, 0f, angulo);
 
-		AtualizarPosicaoDoPontoDeDisparo();
+		if (pontoDeDisparo != null)
+		{
+			pontoDeDisparo.localPosition = Vector3.right * distanciaDoPontoDeDisparo;
+		}
 
+		// Só envia pacote para a rede se a mira moveu significativamente
+		if (Mathf.Abs(Mathf.DeltaAngle(ultimoAnguloEnviado, angulo)) > 1f)
+		{
+			ultimoAnguloEnviado = angulo;
+			RotacionarArmaNaRedeServerRpc(angulo);
+		}
 	}
 
-	private void AtualizarPosicaoDoPontoDeDisparo()
+	[ServerRpc]
+	private void RotacionarArmaNaRedeServerRpc(float angulo)
 	{
-		if (pontoDeDisparo == null) return;
+		RotacionarArmaClientRpc(angulo);
+	}
 
-		pontoDeDisparo.localPosition = Vector3.right * distanciaDoPontoDeDisparo;
-		pontoDeDisparo.localRotation = Quaternion.identity;
+	[ClientRpc]
+	private void RotacionarArmaClientRpc(float angulo)
+	{
+		if (!IsOwner)
+		{
+			transform.rotation = Quaternion.Euler(0f, 0f, angulo);
+			if (pontoDeDisparo != null)
+			{
+				pontoDeDisparo.localPosition = Vector3.right * distanciaDoPontoDeDisparo;
+			}
+		}
 	}
 
 	public Vector2 ObterDirecao()
 	{
 		if (cameraPrincipal == null) cameraPrincipal = Camera.main;
-		if (cameraPrincipal == null) return Vector2.right;
-		if (Mouse.current == null) return Vector2.right;
+		if (cameraPrincipal == null || Mouse.current == null) return Vector2.right;
 
 		Vector2 mouseTela = Mouse.current.position.ReadValue();
 		Vector2 mouseMundo = cameraPrincipal.ScreenToWorldPoint(mouseTela);
@@ -85,46 +102,44 @@ public class Arma : MonoBehaviour
 		Vector2 origem = transform.root.position;
 		Vector2 direcao = mouseMundo - origem;
 
-		if (direcao.sqrMagnitude <= 0.01f) return Vector2.right;
-
-		return direcao.normalized;
+		return direcao.sqrMagnitude <= 0.01f ? Vector2.right : direcao.normalized;
 	}
 
 	public Vector2 ObterPosicaoDeDisparo()
 	{
 		if (pontoDeDisparo == null)
 			return transform.position;
-		AtualizarPosicaoDoPontoDeDisparo();
 		return pontoDeDisparo.position;
 	}
 
 	private void Atirar()
 	{
-		if (Mouse.current == null)
-			return;
-
 		// Clique esquerdo
-		if (!Mouse.current.leftButton.isPressed)
-			return;
+		if (Mouse.current == null || !Mouse.current.leftButton.isPressed) return;
 
-		if (Time.time < proximoTiro)
-			return;
+		if (Time.time < proximoTiro) return;
 
-		if (projetilPrefab == null)
-			return;
+		if (projetilPrefab == null) return;
 
-		if (pontoDeDisparo == null)
-			return;
+		if (pontoDeDisparo == null) return;
 
 		proximoTiro = Time.time + intervaloEntreTiros;
 
-		Vector2 direcao = ObterDirecao();
+		// Pede para o servidor criar a bala, Manda pro servidor APENAS a direção! A posição é decidida pelo servidor.
+		AtirarServerRpc(ObterDirecao());
+	}
 
-		Projetil novoProjetil =
-			Instantiate(projetilPrefab, pontoDeDisparo.position, Quaternion.identity);
+	[ServerRpc]
+	private void AtirarServerRpc(Vector2 direcao)
+	{
+		// O SERVIDOR pega a posição DELE. Isso conserta as balas nascendo no spawn vazio!
+		Vector2 posicaoDisparo = pontoDeDisparo != null ? (Vector2)pontoDeDisparo.position : (Vector2)transform.position;
 
-		GameObject dono = transform.root.gameObject;
+		// O SERVIDOR instancia a bala na cena dele
+		Projetil novoProjetil = Instantiate(projetilPrefab, posicaoDisparo, Quaternion.identity);
+		novoProjetil.Configurar(direcao, dano, velocidadeProjetil, transform.root.gameObject);
 
-		novoProjetil.Configurar(direcao, dano, velocidadeProjetil, dono);
+		// O SERVIDOR avisa todos os outros jogadores para criarem essa bala
+		novoProjetil.GetComponent<NetworkObject>().Spawn();
 	}
 }
