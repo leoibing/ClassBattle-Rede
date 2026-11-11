@@ -18,6 +18,7 @@ public class LobbyManager : MonoBehaviour
 	[Header("Componentes de Interface (UI)")]
 	public TMP_InputField ipInputField;
 	public GameObject painelMenu;
+	public GameObject painelModoDeJogo;
 	public int classeSelecionada = 0; // Padrão: 0 (Assassino)
 	public ModoDeJogo modoSelecionado = ModoDeJogo.TodosContraTodos;
 
@@ -42,6 +43,10 @@ public class LobbyManager : MonoBehaviour
 	private void Start()
 	{
 		ConfigurarCallbackDeConexao();
+
+		// Garante que ao iniciar a Cena 0, o painel de modo de jogo começa fechado
+		if (painelModoDeJogo != null) painelModoDeJogo.SetActive(false);
+		if (painelMenu != null) painelMenu.SetActive(true);
 	}
 
 	private void ConfigurarCallbackDeConexao()
@@ -67,7 +72,7 @@ public class LobbyManager : MonoBehaviour
 		Debug.Log("Modo selecionado: " + modoSelecionado);
 	}
 
-	// BOTÃO ÚNICO DE JOGAR (HOST OU CLIENTE)
+	// BOTÃO JOGAR DA CENA 0 (Menu principal para todos)
 	public void BotaoJogar()
 	{
 		if (NetworkManager.Singleton == null)
@@ -76,50 +81,90 @@ public class LobbyManager : MonoBehaviour
 			return;
 		}
 
-		if (NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer) return;
-
 		if (!NetworkManager.Singleton.TryGetComponent<UnityTransport>(out var transport))
 		{
-			Debug.LogError("ERRO: Componente UnityTransport não foi encontrado no GameObject do NetworkManager!");
+			Debug.LogError("ERRO: Componente UnityTransport não encontrado!");
 			return;
 		}
 
 		// Lê o IP digitado (se houver)
 		string ip = (ipInputField != null && !string.IsNullOrEmpty(ipInputField.text)) ? ipInputField.text.Trim() : "";
 
-		// 1. Se o jogador digitou um IP externo, entra como Cliente nesse IP
-		if (!string.IsNullOrEmpty(ip) && ip != "127.0.0.1" && ip != "localhost")
+		// Se digitou IP ou se já existe um Host na rede, ele é CLIENTE
+		bool ehCliente = !string.IsNullOrEmpty(ip) && ip != "127.0.0.1" && ip != "localhost";
+		if (!ehCliente && HostJaExisteNaPorta(7777))
 		{
+			ehCliente = true;
+			ip = "127.0.0.1";
+		}
+
+		if (ehCliente)
+		{
+			// É CLIENTE: Configura conexão e vai direto para a Cena 1 (Jogo)
+			if (string.IsNullOrEmpty(ip)) ip = "127.0.0.1";
 			transport.SetConnectionData(ip, 7777);
 			EnviarPayload();
+
+			Debug.Log("Entrando como Cliente...");
 			NetworkManager.Singleton.StartClient();
+			SceneManager.LoadScene("1"); // Vai direto para a Cena do jogo
+		}
+		else
+		{
+			Debug.Log("Nenhum Host encontrado. Você é o Host! Abrindo painel de modo de jogo...");
+			if (painelMenu != null) painelMenu.SetActive(false);
+			if (painelModoDeJogo != null) painelModoDeJogo.SetActive(true);
+		}
+	}
+
+	// CLICOU NO BOTÃO "JOGAR AGORA" DO PAINEL DE HOST
+	public void BotaoHostIniciarJogo()
+	{
+		if (NetworkManager.Singleton == null)
+		{
+			Debug.LogError("ERRO: NetworkManager não encontrado na cena!");
+			return;
+		}
+
+		if (!NetworkManager.Singleton.TryGetComponent<UnityTransport>(out var transport))
+		{
+			Debug.LogError("ERRO: UnityTransport não encontrado!");
 			return;
 		}
 
 		// 2. Se não digitou IP (ou é local), verifica se a porta 7777 já está sendo usada por um Host nesta máquina
 		if (HostJaExisteNaPorta(7777))
 		{
+			Debug.LogWarning("Já existe um Host ativo na rede! Convertendo este jogador em Cliente...");
 			transport.SetConnectionData("127.0.0.1", 7777);
 			EnviarPayload();
+
 			NetworkManager.Singleton.StartClient();
+			SceneManager.LoadScene("1");
+			return;
+		}
+
+		transport.SetConnectionData("127.0.0.1", 7777);
+		EnviarPayload();
+
+		Debug.Log("Iniciando Host com o modo: " + modoSelecionado);
+		if (NetworkManager.Singleton.StartHost())
+		{
+			if (NetworkManager.Singleton.SceneManager != null)
+			{
+				// Carrega a Cena do Jogo
+				NetworkManager.Singleton.SceneManager.LoadScene("1", LoadSceneMode.Single);
+			}
+			else
+			{
+				SceneManager.LoadScene("1");
+			}
 		}
 		else
 		{
-			// É o primeiro a entrar -> Entra como HOST
-			transport.SetConnectionData("127.0.0.1", 7777);
-			EnviarPayload();
-			
-			if (NetworkManager.Singleton.StartHost())
-			{
-				if (NetworkManager.Singleton.SceneManager != null)
-				{
-					NetworkManager.Singleton.SceneManager.LoadScene("1", LoadSceneMode.Single);
-				}
-				else
-				{
-					SceneManager.LoadScene("1");
-				}
-			}
+			Debug.LogWarning("Falha ao iniciar o Host. Convertendo em Cliente...");
+			NetworkManager.Singleton.StartClient();
+			SceneManager.LoadScene("1");
 		}
 	}
 
@@ -145,46 +190,6 @@ public class LobbyManager : MonoBehaviour
 		return false;
 	}
 	
-	/*// Chamado pelo botão "Criar Sala (Host)"
-	public void CriarSalaHost()
-	{
-		if (NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer) return;
-
-		EnviarDadosDeConexao();
-		NetworkManager.Singleton.StartHost();
-		// O Servidor troca a cena e leva todos os clientes juntos
-		NetworkManager.Singleton.SceneManager.LoadScene("1", LoadSceneMode.Single);
-	}
-
-	// Chamado pelo botão "Entrar (Cliente)"
-	public void EntrarNaSalaClient()
-	{
-		if (NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer) return;
-
-		// Atualiza o IP para o qual o cliente vai tentar se conectar
-		if (ipInputField != null && !string.IsNullOrEmpty(ipInputField.text))
-		{
-			if (NetworkManager.Singleton.TryGetComponent<Unity.Netcode.Transports.UTP.UnityTransport>(out var transport))
-			{
-				transport.ConnectionData.Address = ipInputField.text;
-			}
-		}
-
-		EnviarDadosDeConexao();
-		NetworkManager.Singleton.StartClient();
-	}
-
-	// Envia o índice da classe escolhida para o servidor via Payload
-	private void EnviarDadosDeConexao()
-	{
-		// Envia [Classe (4 bytes), Modo (4 bytes)]
-		byte[] payload = new byte[8];
-		System.BitConverter.GetBytes(classeSelecionada).CopyTo(payload, 0);
-		System.BitConverter.GetBytes((int)modoSelecionado).CopyTo(payload, 4);
-
-		NetworkManager.Singleton.NetworkConfig.ConnectionData = payload;
-	}*/
-
 	private void EnviarPayload()
 	{
 		if (NetworkManager.Singleton != null && NetworkManager.Singleton.NetworkConfig != null)
