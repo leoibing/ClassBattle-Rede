@@ -4,13 +4,13 @@ using Unity.Netcode;
 
 public abstract class Personagem : NetworkBehaviour
 {
-	[Header("Informações")]
+	[Header("Informaï¿½ï¿½es")]
 	public string nome = "Personagem";
 	public int vidaMaxima = 100;
 	public NetworkVariable<int> vidaAtual = new(100);
 	public NetworkVariable<int> timeId = new(0);
 
-	[Header("Movimentação")]
+	[Header("Movimentaï¿½ï¿½o")]
 	public float velocidade = 5f;
 	public float forcaPulo = 7f;
 
@@ -34,11 +34,11 @@ public abstract class Personagem : NetworkBehaviour
 		}
 		else
 		{
-			// CRUCIAL: Se não for o Host, desativa a física local para não brigar com o servidor
+			// CRUCIAL: Se nï¿½o for o Host, desativa a fï¿½sica local para nï¿½o brigar com o servidor
 			if (rig != null) rig.bodyType = RigidbodyType2D.Kinematic;
 		}
 
-		// Faz a câmera focar no jogador local assim que ele nascer na rede
+		// Faz a cï¿½mera focar no jogador local assim que ele nascer na rede
 		if (IsOwner)
 		{
 			Camera cam = Camera.main;
@@ -59,7 +59,7 @@ public abstract class Personagem : NetworkBehaviour
 
 		if (arma == null)
 		{
-			Debug.LogWarning(nome + " não possui uma arma configurada.");
+			Debug.LogWarning(nome + " nï¿½o possui uma arma configurada.");
 			return;
 		}
 	}
@@ -74,7 +74,7 @@ public abstract class Personagem : NetworkBehaviour
 
 		Movimentacao();
 
-		// ESPAÇO = PULAR
+		// ESPAï¿½O = PULAR
 		if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
 		{
 			TentarPularServerRpc();
@@ -119,7 +119,7 @@ public abstract class Personagem : NetworkBehaviour
 	{
 		if (!estaNoChao)
 		{
-			Debug.Log("Não está no chão.");
+			Debug.Log("Nï¿½o estï¿½ no chï¿½o.");
 			return;
 		}
 		rb.linearVelocity = new Vector2(rb.linearVelocity.x, forcaPulo);

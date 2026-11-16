@@ -1,223 +1,474 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using Unity.Netcode.Transports.UTP;
 using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
+using Unity.Networking.Transport.Relay;
 using TMPro;
+using System;
 using System.Collections.Generic;
-using System.Net.NetworkInformation;
-using System.Net;
+using System.Threading.Tasks;
+
+using Unity.Services.Core;
+using Unity.Services.Authentication;
+using Unity.Services.Relay;
+using Unity.Services.Relay.Models;
 
 public class LobbyManager : MonoBehaviour
 {
-	public enum ModoDeJogo { TodosContraTodos = 0, Modo2v2 = 1 }
+    public enum ModoDeJogo
+    {
+        TodosContraTodos = 0,
+        Modo2v2 = 1
+    }
 
-	[Header("Prefabs das 4 Classes")]
-	// Arraste no Inspector: [0] Assassino, [1] Atirador, [2] Curandeiro, [3] Tanque
-	public GameObject[] prefabsClasses;
+    [Header("Prefabs das 4 Classes")]
+    // [0] Assassino, [1] Atirador, [2] Curandeiro, [3] Tanque
+    public GameObject[] prefabsClasses;
 
-	[Header("Componentes de Interface (UI)")]
-	public TMP_InputField ipInputField;
-	public GameObject painelMenu;
-	public GameObject painelModoDeJogo;
-	public int classeSelecionada = 0; // Padr„o: 0 (Assassino)
-	public ModoDeJogo modoSelecionado = ModoDeJogo.TodosContraTodos;
+    [Header("Componentes de Interface")]
+    public TMP_InputField codigoSalaInputField;
+    public TMP_Text codigoSalaTexto;
+    public TMP_Text statusTexto;
 
-	// Dicion·rio no Servidor para armazenar a classe de cada Cliente pelo ClientId
-	public static Dictionary<ulong, int> classePorCliente = new();
+    public GameObject painelMenu;
+    public GameObject painelModoDeJogo;
 
-	public static LobbyManager Instancia { get; private set; }
+    [Header("Sele√ß√£o")]
+    public int classeSelecionada = 0;
+    public ModoDeJogo modoSelecionado =
+        ModoDeJogo.TodosContraTodos;
 
-	private void Awake()
-	{
-		if (Instancia == null)
-		{
-			Instancia = this;
-			DontDestroyOnLoad(gameObject);
-		}
-		else
-		{
-			Destroy(gameObject);
-		}
-	}
+    public static Dictionary<ulong, int> classePorCliente = new();
 
-	private void Start()
-	{
-		ConfigurarCallbackDeConexao();
+    public static LobbyManager Instancia { get; private set; }
 
-		// Garante que ao iniciar a Cena 0, o painel de modo de jogo comeÁa fechado
-		if (painelModoDeJogo != null) painelModoDeJogo.SetActive(false);
-		if (painelMenu != null) painelMenu.SetActive(true);
-	}
+    private const int MAX_CLIENTES_ADICIONAIS = 3;
+    private const string TIPO_CONEXAO_RELAY = "dtls";
 
-	private void ConfigurarCallbackDeConexao()
-	{
-		// Ativa a verificaÁ„o/aprovaÁ„o de conexıes no Servidor
-		if (NetworkManager.Singleton != null)
-		{
-			NetworkManager.Singleton.NetworkConfig.ConnectionApproval = true;
-			NetworkManager.Singleton.ConnectionApprovalCallback = ProcessarConexao;
-		}
-	}
+    private bool operacaoEmAndamento;
+    private bool callbacksConfigurados;
 
-	// Chamado ao clicar nos botıes das classes na UI
-	public void SelecionarClasse(int index)
-	{
-		classeSelecionada = index;
-		Debug.Log("Classe selecionada: " + prefabsClasses[index].name);
-	}
+    private void Awake()
+    {
+        if (Instancia == null)
+        {
+            Instancia = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
 
-	public void SelecionarModo(int modoIndex)
-	{
-		modoSelecionado = (ModoDeJogo)modoIndex;
-		Debug.Log("Modo selecionado: " + modoSelecionado);
-	}
+    private void Start()
+    {
+        ConfigurarCallbackDeConexao();
 
-	// BOT√O JOGAR DA CENA 0 (Menu principal para todos)
-	public void BotaoJogar()
-	{
-		if (NetworkManager.Singleton == null)
-		{
-			Debug.LogError("ERRO: NetworkManager n„o encontrado na cena!");
-			return;
-		}
+        if (painelModoDeJogo != null)
+            painelModoDeJogo.SetActive(false);
 
-		if (!NetworkManager.Singleton.TryGetComponent<UnityTransport>(out var transport))
-		{
-			Debug.LogError("ERRO: Componente UnityTransport n„o encontrado!");
-			return;
-		}
+        if (painelMenu != null)
+            painelMenu.SetActive(true);
+    }
 
-		// LÍ o IP digitado (se houver)
-		string ip = (ipInputField != null && !string.IsNullOrEmpty(ipInputField.text)) ? ipInputField.text.Trim() : "";
+    private void ConfigurarCallbackDeConexao()
+    {
+        NetworkManager nm = NetworkManager.Singleton;
 
-		// Se digitou IP ou se j· existe um Host na rede, ele È CLIENTE
-		bool ehCliente = !string.IsNullOrEmpty(ip) && ip != "127.0.0.1" && ip != "localhost";
-		if (!ehCliente && HostJaExisteNaPorta(7777))
-		{
-			ehCliente = true;
-			ip = "127.0.0.1";
-		}
+        if (nm == null)
+        {
+            Debug.LogError("NetworkManager n√£o encontrado!");
+            return;
+        }
 
-		if (ehCliente)
-		{
-			// … CLIENTE: Configura conex„o e vai direto para a Cena 1 (Jogo)
-			if (string.IsNullOrEmpty(ip)) ip = "127.0.0.1";
-			transport.SetConnectionData(ip, 7777);
-			EnviarPayload();
+        nm.NetworkConfig.ConnectionApproval = true;
+        nm.ConnectionApprovalCallback = ProcessarConexao;
 
-			Debug.Log("Entrando como Cliente...");
-			NetworkManager.Singleton.StartClient();
-			SceneManager.LoadScene("1"); // Vai direto para a Cena do jogo
-		}
-		else
-		{
-			Debug.Log("Nenhum Host encontrado. VocÍ È o Host! Abrindo painel de modo de jogo...");
-			if (painelMenu != null) painelMenu.SetActive(false);
-			if (painelModoDeJogo != null) painelModoDeJogo.SetActive(true);
-		}
-	}
+        if (!callbacksConfigurados)
+        {
+            nm.OnClientConnectedCallback += AoConectarCliente;
+            nm.OnClientDisconnectCallback += AoDesconectarCliente;
 
-	// CLICOU NO BOT√O "JOGAR AGORA" DO PAINEL DE HOST
-	public void BotaoHostIniciarJogo()
-	{
-		if (NetworkManager.Singleton == null)
-		{
-			Debug.LogError("ERRO: NetworkManager n„o encontrado na cena!");
-			return;
-		}
+            callbacksConfigurados = true;
+        }
+    }
 
-		if (!NetworkManager.Singleton.TryGetComponent<UnityTransport>(out var transport))
-		{
-			Debug.LogError("ERRO: UnityTransport n„o encontrado!");
-			return;
-		}
+    private async Task PrepararServicosUnity()
+    {
+        if (UnityServices.State != ServicesInitializationState.Initialized)
+        {
+            await UnityServices.InitializeAsync();
+        }
 
-		// 2. Se n„o digitou IP (ou È local), verifica se a porta 7777 j· est· sendo usada por um Host nesta m·quina
-		if (HostJaExisteNaPorta(7777))
-		{
-			Debug.LogWarning("J· existe um Host ativo na rede! Convertendo este jogador em Cliente...");
-			transport.SetConnectionData("127.0.0.1", 7777);
-			EnviarPayload();
+        if (!AuthenticationService.Instance.IsSignedIn)
+        {
+            await AuthenticationService.Instance.SignInAnonymouslyAsync();
+        }
+    }
 
-			NetworkManager.Singleton.StartClient();
-			SceneManager.LoadScene("1");
-			return;
-		}
+    private bool ObterComponentesRede(
+        out NetworkManager nm,
+        out UnityTransport transport)
+    {
+        nm = NetworkManager.Singleton;
+        transport = null;
 
-		transport.SetConnectionData("127.0.0.1", 7777);
-		EnviarPayload();
+        if (nm == null)
+        {
+            Debug.LogError("NetworkManager n√£o encontrado!");
+            return false;
+        }
 
-		Debug.Log("Iniciando Host com o modo: " + modoSelecionado);
-		if (NetworkManager.Singleton.StartHost())
-		{
-			if (NetworkManager.Singleton.SceneManager != null)
-			{
-				// Carrega a Cena do Jogo
-				NetworkManager.Singleton.SceneManager.LoadScene("1", LoadSceneMode.Single);
-			}
-			else
-			{
-				SceneManager.LoadScene("1");
-			}
-		}
-		else
-		{
-			Debug.LogWarning("Falha ao iniciar o Host. Convertendo em Cliente...");
-			NetworkManager.Singleton.StartClient();
-			SceneManager.LoadScene("1");
-		}
-	}
+        transport = nm.GetComponent<UnityTransport>();
 
-	private bool HostJaExisteNaPorta(int porta)
-	{
-		try
-		{
-			IPGlobalProperties properties = IPGlobalProperties.GetIPGlobalProperties();
-			IPEndPoint[] listeners = properties.GetActiveUdpListeners();
+        if (transport == null)
+        {
+            Debug.LogError("UnityTransport n√£o encontrado!");
+            return false;
+        }
 
-			foreach (IPEndPoint listener in listeners)
-			{
-				if (listener.Port == porta)
-				{
-					return true; // Encontrou a porta 7777 em uso (Host ativo)
-				}
-			}
-		}
-		catch
-		{
-			// Caso ocorra restriÁ„o de permiss„o de rede no SO
-		}
-		return false;
-	}
-	
-	private void EnviarPayload()
-	{
-		if (NetworkManager.Singleton != null && NetworkManager.Singleton.NetworkConfig != null)
-		{
-			// Cria um payload fixo de 4 bytes para sempre dar Match na configuraÁ„o
-			byte[] payload = new byte[4];
-			System.BitConverter.GetBytes(classeSelecionada).CopyTo(payload, 0);
-			NetworkManager.Singleton.NetworkConfig.ConnectionData = payload;
-		}
-	}
+        return true;
+    }
 
-	private void ProcessarConexao(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)
-	{
-		// LÍ a classe enviada no payload do cliente que est· se conectando
-		int classeIndex = 0;
+    public void SelecionarClasse(int index)
+    {
+        if (prefabsClasses == null ||
+            index < 0 ||
+            index >= prefabsClasses.Length ||
+            prefabsClasses[index] == null)
+        {
+            Debug.LogError("√çndice de classe inv√°lido!");
+            return;
+        }
 
-		if (request.Payload != null && request.Payload.Length >= 4)
-		{
-			classeIndex = System.BitConverter.ToInt32(request.Payload, 0);
-		}
+        classeSelecionada = index;
 
-		// Salva a classe referente ao ID desse cliente especÌfico
-		classePorCliente ??= new Dictionary<ulong, int>();
-		classePorCliente[request.ClientNetworkId] = classeIndex;
+        Debug.Log(
+            "Classe selecionada: " +
+            prefabsClasses[index].name
+        );
+    }
 
-		response.Approved = true;
-		response.CreatePlayerObject = false; // O GameManager da Cena 1 vai instanciar
-	}
+    public void SelecionarModo(int modoIndex)
+    {
+        if (modoIndex < 0 || modoIndex > 1)
+        {
+            Debug.LogError("Modo de jogo inv√°lido!");
+            return;
+        }
 
-	public ModoDeJogo ObterModoSelecionado() => modoSelecionado;
+        modoSelecionado = (ModoDeJogo)modoIndex;
+
+        Debug.Log("Modo selecionado: " + modoSelecionado);
+    }
+
+    // BOT√ÉO JOGAR DA CENA 0
+    // Com c√≥digo preenchido: entra na sala.
+    // Sem c√≥digo: abre o painel para criar uma sala.
+    public async void BotaoJogar()
+    {
+        if (operacaoEmAndamento)
+            return;
+
+        string codigo = codigoSalaInputField != null
+            ? codigoSalaInputField.text.Trim()
+            : "";
+
+        if (!string.IsNullOrWhiteSpace(codigo))
+        {
+            await EntrarNaSala(codigo);
+            return;
+        }
+
+        if (painelMenu != null)
+            painelMenu.SetActive(false);
+
+        if (painelModoDeJogo != null)
+            painelModoDeJogo.SetActive(true);
+    }
+
+    // BOT√ÉO CRIAR SALA
+    public async void BotaoHostIniciarJogo()
+    {
+        if (operacaoEmAndamento)
+            return;
+
+        if (!ObterComponentesRede(out NetworkManager nm, out UnityTransport transport))
+            return;
+
+        if (nm.IsListening)
+        {
+            Debug.LogWarning("Este NetworkManager j√° est√° conectado.");
+            return;
+        }
+
+        if (prefabsClasses == null ||
+            classeSelecionada < 0 ||
+            classeSelecionada >= prefabsClasses.Length ||
+            prefabsClasses[classeSelecionada] == null)
+        {
+            Debug.LogError("A classe selecionada n√£o √© v√°lida.");
+            return;
+        }
+
+        operacaoEmAndamento = true;
+        AtualizarStatus("Criando sala...");
+
+        try
+        {
+            await PrepararServicosUnity();
+
+            // Host + at√© 3 jogadores adicionais.
+            var allocation =
+                await RelayService.Instance.CreateAllocationAsync(
+                    MAX_CLIENTES_ADICIONAIS
+                );
+
+            transport.SetRelayServerData(
+                AllocationUtils.ToRelayServerData(
+                    allocation,
+                    TIPO_CONEXAO_RELAY
+                )
+            );
+
+            // Obt√©m o c√≥digo que ser√° compartilhado com os clientes.
+            string codigo =
+                await RelayService.Instance.GetJoinCodeAsync(
+                    allocation.AllocationId
+                );
+
+            EnviarPayload();
+
+            classePorCliente.Clear();
+
+            if (!nm.StartHost())
+            {
+                throw new Exception("N√£o foi poss√≠vel iniciar o Host.");
+            }
+
+            // O host tamb√©m precisa ter sua classe registrada.
+            classePorCliente[nm.LocalClientId] = classeSelecionada;
+
+            if (codigoSalaTexto != null)
+            {
+                codigoSalaTexto.text = "C√≥digo da sala: " + codigo;
+            }
+
+            AtualizarStatus(
+                "Sala criada! Compartilhe o c√≥digo com os jogadores."
+            );
+
+            Debug.Log("Sala Relay criada. C√≥digo: " + codigo);
+            Debug.Log("Host iniciado. Aguardando jogadores.");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Erro ao criar sala Relay: " + e);
+            AtualizarStatus("Erro ao criar sala: " + e.Message);
+        }
+        finally
+        {
+            operacaoEmAndamento = false;
+        }
+    }
+
+    // ENTRAR NA SALA COMO CLIENTE
+    private async Task EntrarNaSala(string codigo)
+    {
+        if (!ObterComponentesRede(out NetworkManager nm, out UnityTransport transport))
+            return;
+
+        if (nm.IsListening)
+        {
+            Debug.LogWarning("Este NetworkManager j√° est√° conectado.");
+            return;
+        }
+
+        if (prefabsClasses == null ||
+            classeSelecionada < 0 ||
+            classeSelecionada >= prefabsClasses.Length ||
+            prefabsClasses[classeSelecionada] == null)
+        {
+            Debug.LogError("A classe selecionada n√£o √© v√°lida.");
+            return;
+        }
+
+        operacaoEmAndamento = true;
+        AtualizarStatus("Conectando √† sala...");
+
+        try
+        {
+            await PrepararServicosUnity();
+
+            var allocation =
+                await RelayService.Instance.JoinAllocationAsync(
+                    joinCode: codigo.Trim().ToUpperInvariant()
+                );
+
+            transport.SetRelayServerData(
+                AllocationUtils.ToRelayServerData(
+                    allocation,
+                    TIPO_CONEXAO_RELAY
+                )
+            );
+
+            EnviarPayload();
+
+            // O cliente N√ÉO carrega a cena localmente.
+            // Ele ser√° sincronizado com a cena do host pelo NGO.
+            if (!nm.StartClient())
+            {
+                throw new Exception("N√£o foi poss√≠vel iniciar o Cliente.");
+            }
+
+            AtualizarStatus("Conectando... Aguarde o host iniciar a partida.");
+
+            Debug.Log("Cliente iniciado. C√≥digo utilizado: " + codigo);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Erro ao entrar na sala: " + e);
+            AtualizarStatus("Erro ao entrar na sala: " + e.Message);
+        }
+        finally
+        {
+            operacaoEmAndamento = false;
+        }
+    }
+
+    // NOVO BOT√ÉO: INICIAR PARTIDA
+    // Deve ser chamado pelo Host depois que os jogadores entrarem.
+    public void BotaoIniciarPartida()
+    {
+        NetworkManager nm = NetworkManager.Singleton;
+
+        if (nm == null || !nm.IsHost)
+        {
+            Debug.LogWarning("Somente o Host pode iniciar a partida.");
+            return;
+        }
+
+        if (nm.SceneManager == null)
+        {
+            Debug.LogError("NetworkSceneManager n√£o est√° dispon√≠vel.");
+            return;
+        }
+
+        AtualizarStatus("Iniciando partida...");
+
+        var resultado = nm.SceneManager.LoadScene(
+            "1",
+            LoadSceneMode.Single
+        );
+
+        if (resultado != SceneEventProgressStatus.Started)
+        {
+            Debug.LogError(
+                "Falha ao iniciar o carregamento da cena 1: " +
+                resultado
+            );
+        }
+    }
+
+    private void EnviarPayload()
+    {
+        NetworkManager nm = NetworkManager.Singleton;
+
+        if (nm == null || nm.NetworkConfig == null)
+            return;
+
+        byte[] payload =
+            BitConverter.GetBytes(classeSelecionada);
+
+        nm.NetworkConfig.ConnectionData = payload;
+    }
+
+    private void ProcessarConexao(
+        NetworkManager.ConnectionApprovalRequest request,
+        NetworkManager.ConnectionApprovalResponse response)
+    {
+        response.Approved = false;
+        response.CreatePlayerObject = false;
+
+        if (request.Payload == null || request.Payload.Length < 4)
+        {
+            response.Reason = "Dados da classe n√£o recebidos.";
+            return;
+        }
+
+        int classeIndex =
+            BitConverter.ToInt32(request.Payload, 0);
+
+        if (prefabsClasses == null ||
+            classeIndex < 0 ||
+            classeIndex >= prefabsClasses.Length ||
+            prefabsClasses[classeIndex] == null)
+        {
+            response.Reason = "Classe selecionada inv√°lida.";
+            return;
+        }
+
+        classePorCliente[request.ClientNetworkId] = classeIndex;
+
+        response.Approved = true;
+
+        Debug.Log(
+            "Cliente aprovado: " +
+            request.ClientNetworkId +
+            " | Classe: " +
+            classeIndex
+        );
+    }
+
+    private void AoConectarCliente(ulong clientId)
+    {
+        Debug.Log("Cliente conectado: " + clientId);
+
+        NetworkManager nm = NetworkManager.Singleton;
+
+        if (nm != null &&
+            clientId == nm.LocalClientId &&
+            !nm.IsServer)
+        {
+            AtualizarStatus("Conectado! Aguardando o host iniciar a partida.");
+        }
+    }
+
+    private void AoDesconectarCliente(ulong clientId)
+    {
+        Debug.Log("Cliente desconectado: " + clientId);
+
+        NetworkManager nm = NetworkManager.Singleton;
+
+        if (nm != null && clientId == nm.LocalClientId)
+        {
+            AtualizarStatus("Voc√™ foi desconectado da sala.");
+        }
+    }
+
+    private void AtualizarStatus(string mensagem)
+    {
+        Debug.Log(mensagem);
+
+        if (statusTexto != null)
+            statusTexto.text = mensagem;
+    }
+
+    public ModoDeJogo ObterModoSelecionado()
+    {
+        return modoSelecionado;
+    }
+
+    private void OnDestroy()
+    {
+        if (NetworkManager.Singleton != null && callbacksConfigurados)
+        {
+            NetworkManager.Singleton.OnClientConnectedCallback -= AoConectarCliente;
+            NetworkManager.Singleton.OnClientDisconnectCallback -= AoDesconectarCliente;
+        }
+
+        if (Instancia == this)
+            Instancia = null;
+    }
 }
